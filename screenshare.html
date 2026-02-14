@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Global Screen Share</title>
+
+<!-- Firebase v8 -->
+<script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
+
+<style>
+body{
+  margin:0;
+  font-family:system-ui;
+  background:black;
+  color:white;
+  overflow:hidden;
+}
+video.bg{
+  position:fixed;
+  inset:0;
+  width:100%;
+  height:100%;
+  object-fit:cover;
+  z-index:-2;
+}
+.overlay{
+  position:fixed;
+  inset:0;
+  background:rgba(5,5,15,.65);
+  z-index:-1;
+}
+.card{
+  max-width:420px;
+  margin:auto;
+  margin-top:8vh;
+  background:rgba(255,255,255,.06);
+  backdrop-filter:blur(14px);
+  padding:20px;
+  border-radius:16px;
+  border:1px solid rgba(236,72,153,.3);
+}
+button{
+  width:100%;
+  padding:12px;
+  margin-top:8px;
+  border:none;
+  border-radius:10px;
+  background:linear-gradient(135deg,#ec4899,#6366f1);
+  color:white;
+  font-size:14px;
+  cursor:pointer;
+}
+video#screen{
+  width:100%;
+  margin-top:12px;
+  border-radius:12px;
+  background:black;
+}
+.link{
+  margin-top:10px;
+  font-size:13px;
+  word-break:break-all;
+  opacity:.9;
+}
+small{opacity:.7}
+</style>
+</head>
+
+<body>
+
+<!-- Background video -->
+<video class="bg" autoplay muted loop playsinline>
+  <source src="https://dlngrofficial.github.io/dlngrchat2/pink-puff-clouds.1920x1080.mp4">
+</video>
+<div class="overlay"></div>
+
+<div class="card">
+  <h3 align="center">🌍 Global Screen Share</h3>
+
+  <button onclick="startShare()">Start Sharing</button>
+  <button onclick="disconnect()">Disconnect</button>
+
+  <div class="link">
+    <small>Open this link on 2nd device:</small><br>
+    <span id="roomLink"></span>
+  </div>
+
+  <video id="screen" autoplay playsinline></video>
+</div>
+
+<script>
+/* Firebase config */
+firebase.initializeApp({
+  apiKey: "AIzaSyCTBijtaD2itFaHPYYAnFm8XdzQjC-r9EU",
+  authDomain: "screenshare-5ce9d.firebaseapp.com",
+  databaseURL: "https://screenshare-5ce9d-default-rtdb.firebaseio.com",
+  projectId: "screenshare-5ce9d",
+  storageBucket: "screenshare-5ce9d.firebasestorage.app",
+  messagingSenderId: "293849844955",
+  appId: "1:293849844955:web:8149bc48ba4f54527fd0fe"
+});
+
+const room =
+  location.hash.substring(1) ||
+  Math.random().toString(36).slice(2);
+
+location.hash = room;
+
+document.getElementById("roomLink").innerText =
+  location.href;
+
+const db = firebase.database().ref("rooms/" + room);
+const pc = new RTCPeerConnection({
+  iceServers:[{urls:"stun:stun.l.google.com:19302"}]
+});
+
+const video = document.getElementById("screen");
+
+pc.ontrack = e => video.srcObject = e.streams[0];
+
+pc.onicecandidate = e => {
+  if(e.candidate) db.child("ice").push(e.candidate.toJSON());
+};
+
+db.child("offer").on("value", async s=>{
+  if(s.val() && !pc.currentRemoteDescription){
+    await pc.setRemoteDescription(s.val());
+    const ans = await pc.createAnswer();
+    await pc.setLocalDescription(ans);
+    db.child("answer").set(ans);
+  }
+});
+
+db.child("answer").on("value", s=>{
+  if(s.val()) pc.setRemoteDescription(s.val());
+});
+
+db.child("ice").on("child_added", s=>{
+  pc.addIceCandidate(new RTCIceCandidate(s.val()));
+});
+
+async function startShare(){
+  const stream = await navigator.mediaDevices.getDisplayMedia({
+    video:true,
+    audio:false
+  });
+  stream.getTracks().forEach(t=>pc.addTrack(t,stream));
+  const offer = await pc.createOffer();
+  await pc.setLocalDescription(offer);
+  db.child("offer").set(offer);
+}
+
+function disconnect(){
+  pc.close();
+  db.remove();
+  location.reload();
+}
+</script>
+
+</body>
+</html>
