@@ -183,14 +183,19 @@ addIceListeners();
 
 /* ---------- SIGNALING ---------- */
 db.child("offer").on("value", async snap => {
-  if (!snap.val() || pc.currentRemoteDescription) return;
+  if (!snap.val()) return;
 
-  statusEl.innerText = "Connecting…";
-  await pc.setRemoteDescription(snap.val());
+  try {
+    statusEl.innerText = "Connecting…";
 
-  const answer = await pc.createAnswer();
-  await pc.setLocalDescription(answer);
-  db.child("answer").set(answer);
+    await pc.setRemoteDescription(new RTCSessionDescription(snap.val()));
+    const answer = await pc.createAnswer();
+    await pc.setLocalDescription(answer);
+
+    await db.child("answer").set(answer);
+  } catch (err) {
+    console.error("Offer handling error:", err);
+  }
 });
 
 db.child("answer").on("value", snap => {
@@ -205,6 +210,8 @@ async function startShare() {
 
   pc.close();
   await db.remove();
+  await db.child("hostIce").remove();
+await db.child("viewerIce").remove();
 
   createPC();
   addIceListeners();
@@ -226,9 +233,9 @@ async function startShare() {
 /* ---------- STOP SHARING ---------- */
 function stopShare() {
   pc.getSenders().forEach(s => s.track && s.track.stop());
-  pc.close();
-  statusEl.innerText = "Stopped";
+  statusEl.innerText = "Stopped sharing";
 }
+
 
 /* ---------- RECONNECT ---------- */
 function reconnect() {
