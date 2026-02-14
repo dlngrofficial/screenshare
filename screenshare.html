@@ -5,7 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Global Screen Share</title>
 
-<!-- Firebase v8 -->
 <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
 <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
 
@@ -58,19 +57,26 @@ video#screen{
   border-radius:12px;
   background:black;
 }
-.link{
-  margin-top:10px;
+.status{
+  margin-top:8px;
   font-size:13px;
-  word-break:break-all;
-  opacity:.9;
+  opacity:.85;
+  text-align:center;
 }
-small{opacity:.7}
+input{
+  width:100%;
+  padding:8px;
+  border-radius:8px;
+  border:none;
+  background:#111;
+  color:#0f0;
+  font-size:12px;
+}
 </style>
 </head>
 
 <body>
 
-<!-- Background video -->
 <video class="bg" autoplay muted loop playsinline>
   <source src="https://dlngrofficial.github.io/dlngrchat2/pink-puff-clouds.1920x1080.mp4">
 </video>
@@ -79,83 +85,91 @@ small{opacity:.7}
 <div class="card">
   <h3 align="center">🌍 Global Screen Share</h3>
 
-  <button onclick="startShare()">Start Sharing</button>
-  <button onclick="disconnect()">Disconnect</button>
+  <button onclick="startShare()">Start Sharing (Host)</button>
+  <button onclick="stopShare()">Stop Sharing</button>
+  <button onclick="reconnect()">Reconnect</button>
 
-  <div class="link">
-    <small>Open this link on 2nd device:</small><br>
-    <span id="roomLink"></span>
-  </div>
+  <div class="status" id="status">Waiting for host…</div>
+
+  <input id="roomInput" readonly>
 
   <video id="screen" autoplay playsinline></video>
 </div>
 
 <script>
-/* Firebase config */
 firebase.initializeApp({
   apiKey: "AIzaSyCTBijtaD2itFaHPYYAnFm8XdzQjC-r9EU",
   authDomain: "screenshare-5ce9d.firebaseapp.com",
   databaseURL: "https://screenshare-5ce9d-default-rtdb.firebaseio.com",
-  projectId: "screenshare-5ce9d",
-  storageBucket: "screenshare-5ce9d.firebasestorage.app",
-  messagingSenderId: "293849844955",
-  appId: "1:293849844955:web:8149bc48ba4f54527fd0fe"
+  projectId: "screenshare-5ce9d"
 });
 
-const room =
-  location.hash.substring(1) ||
-  Math.random().toString(36).slice(2);
-
+const room = location.hash.substring(1) || Math.random().toString(36).slice(2);
 location.hash = room;
+document.getElementById("roomInput").value = location.href;
 
-document.getElementById("roomLink").innerText =
-  location.href;
-
-const db = firebase.database().ref("rooms/" + room);
-const pc = new RTCPeerConnection({
-  iceServers:[{urls:"stun:stun.l.google.com:19302"}]
-});
-
+const statusEl = document.getElementById("status");
 const video = document.getElementById("screen");
+const db = firebase.database().ref("rooms/" + room);
 
-pc.ontrack = e => video.srcObject = e.streams[0];
+let pc;
 
-pc.onicecandidate = e => {
-  if(e.candidate) db.child("ice").push(e.candidate.toJSON());
+function createPC(){
+  pc = new RTCPeerConnection();
+
+pc.ontrack = e => {
+  video.srcObject = e.streams[0];
+  video.play().catch(()=>{});
+  statusEl.innerText = "🔴 Live";
 };
 
-db.child("offer").on("value", async s=>{
-  if(s.val() && !pc.currentRemoteDescription){
-    await pc.setRemoteDescription(s.val());
-    const ans = await pc.createAnswer();
-    await pc.setLocalDescription(ans);
-    db.child("answer").set(ans);
-  }
+
+  pc.onicecandidate = e => {
+    if(e.candidate) db.child("ice").push(e.candidate.toJSON());
+  };
+}
+
+createPC();
+
+db.child("offer").on("value", async snap=>{
+  if(!snap.val() || pc.currentRemoteDescription) return;
+
+  statusEl.innerText = "Connecting…";
+  await pc.setRemoteDescription(snap.val());
+  const answer = await pc.createAnswer();
+  await pc.setLocalDescription(answer);
+  db.child("answer").set(answer);
 });
 
-db.child("answer").on("value", s=>{
-  if(s.val()) pc.setRemoteDescription(s.val());
+db.child("answer").on("value", snap=>{
+  if(snap.val()) pc.setRemoteDescription(snap.val());
 });
 
-db.child("ice").on("child_added", s=>{
-  pc.addIceCandidate(new RTCIceCandidate(s.val()));
+db.child("ice").on("child_added", snap=>{
+  pc.addIceCandidate(new RTCIceCandidate(snap.val()));
 });
 
 async function startShare(){
-  const stream = await navigator.mediaDevices.getDisplayMedia({
-    video:true,
-    audio:false
-  });
+  await db.remove();
+  statusEl.innerText = "Sharing screen…";
+
+  const stream = await navigator.mediaDevices.getDisplayMedia({video:true});
   stream.getTracks().forEach(t=>pc.addTrack(t,stream));
+
   const offer = await pc.createOffer();
   await pc.setLocalDescription(offer);
   db.child("offer").set(offer);
 }
 
-function disconnect(){
+function stopShare(){
+  pc.getSenders().forEach(s=>s.track && s.track.stop());
+  statusEl.innerText = "Stopped";
+}
+
+function reconnect(){
   pc.close();
-  db.remove();
-  location.reload();
+  createPC();
+  statusEl.innerText = "Reconnected. Waiting for host…";
 }
 </script>
 
