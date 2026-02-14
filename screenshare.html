@@ -127,12 +127,27 @@ function createPC() {
     ]
   });
 
-  pc.ontrack = e => {
-    video.srcObject = e.streams[0];
-    video.muted = true;
-    video.play().catch(() => {});
+pc.ontrack = e => {
+  video.srcObject = e.streams[0];
+  video.muted = true;
+  video.play().then(() => {
     statusEl.innerText = "🔴 Live";
-  };
+  }).catch(err => {
+    console.log('Autoplay blocked:', err);
+    statusEl.innerText = "Autoplay blocked – click video to play";
+    video.style.cursor = 'pointer';  // Visual hint that it's clickable
+    video.onclick = () => {
+      video.play().then(() => {
+        statusEl.innerText = "🔴 Live";
+        video.style.cursor = 'default';
+        video.onclick = null;  // Remove click handler after playing
+      }).catch(playErr => {
+        console.error('Manual play failed:', playErr);
+        statusEl.innerText = "Playback failed – check permissions";
+      });
+    };
+  });
+};
 
   pc.onicecandidate = e => {
     if (e.candidate) {
